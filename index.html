@@ -107,6 +107,17 @@ fbq('track', 'PageView');
   .hint { font-size: 13px; color: #9aa1ad; margin-left: 60px; }
   .slider-ctrl .btn { margin-left: auto; width: 220px; height: 50px; font-size: 15px; }
 
+  /* 후기 작성 */
+  dialog { border: 0; padding: 0; background: none; width: min(520px, calc(100% - 32px)); max-height: calc(100% - 32px); margin: auto; }
+  dialog::backdrop { background: rgba(10, 16, 30, .6); }
+  dialog .form-card { position: relative; }
+  .dialog-close { position: absolute; top: 14px; right: 16px; border: 0; background: none; font-size: 28px; line-height: 1; color: var(--muted); cursor: pointer; }
+  .field small { font-weight: 400; color: var(--muted); }
+  .field select, .field textarea { width: 100%; border: 1px solid var(--line); background: #f5f6f8; border-radius: 8px; padding: 14px 16px; font: inherit; font-size: 15px; }
+  .field select { height: 56px; padding: 0 16px; }
+  .field textarea { resize: vertical; }
+  .field select:focus, .field textarea:focus { outline: 2px solid var(--navy); outline-offset: -1px; background: #fff; }
+
   /* FAQ */
   .faq { margin-top: 60px; display: grid; gap: 20px; }
   .faq details { border: 1px solid var(--line); border-radius: var(--radius); }
@@ -284,10 +295,45 @@ fbq('track', 'PageView');
       <button class="arrow" id="next" aria-label="다음 후기">›</button>
       <div class="dots" id="dots"></div>
       <span class="hint">자동 롤링 · 4초 간격 / 마우스 오버 시 정지</span>
-      <a href="#quote" class="btn btn-navy">후기 작성하기</a>
+      <button type="button" class="btn btn-navy" id="openReview">후기 작성하기</button>
     </div>
   </div>
 </section>
+
+<dialog id="reviewDialog">
+  <form class="form-card" id="reviewForm">
+    <button type="button" class="dialog-close" aria-label="닫기" id="closeReview">×</button>
+    <h2>매입 후기 작성</h2>
+    <p class="sub">확인 후 게시됩니다. 이름은 김OO처럼 가려서 표시됩니다.</p>
+    <div class="field">
+      <label for="r_name">이름</label>
+      <input type="text" id="r_name" name="name" placeholder="홍길동" required autocomplete="name">
+    </div>
+    <div class="field">
+      <label for="r_phone">연락처 <small>(거래 확인용 · 공개되지 않음)</small></label>
+      <input type="tel" id="r_phone" name="phone" placeholder="010-0000-0000" required pattern="[0-9\-]{9,13}" autocomplete="tel">
+    </div>
+    <div class="field">
+      <label for="r_product">매입 품목</label>
+      <input type="text" id="r_product" name="product" placeholder="예) 샤넬 클래식 미디움">
+    </div>
+    <div class="field">
+      <label for="r_rating">별점</label>
+      <select id="r_rating" name="rating" required>
+        <option value="5">★★★★★ 매우 만족</option>
+        <option value="4">★★★★☆ 만족</option>
+        <option value="3">★★★☆☆ 보통</option>
+        <option value="2">★★☆☆☆ 불만족</option>
+        <option value="1">★☆☆☆☆ 매우 불만족</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="r_text">후기 내용</label>
+      <textarea id="r_text" name="text" rows="4" minlength="10" maxlength="300" placeholder="거래 경험을 10자 이상 남겨주세요." required></textarea>
+    </div>
+    <button type="submit" class="btn btn-navy">후기 등록</button>
+  </form>
+</dialog>
 
 <section class="block" id="faq">
   <div class="wrap">
@@ -350,7 +396,7 @@ fbq('track', 'PageView');
   const cards = slider.children;
   let idx = 0, timer;
   const visible = () => Math.round(slider.clientWidth / cards[0].offsetWidth);
-  const pages = () => cards.length - visible() + 1;
+  const pages = () => Math.max(1, cards.length - visible() + 1);
   function go(i) {
     idx = (i + pages()) % pages();
     slider.scrollTo({ left: cards[idx].offsetLeft - slider.offsetLeft - 4 });
@@ -377,6 +423,7 @@ fbq('track', 'PageView');
   slider.addEventListener('scroll', () => {
     clearTimeout(syncT);
     syncT = setTimeout(() => {
+      if (cards.length < 2) return;
       const i = Math.min(pages() - 1, Math.round(slider.scrollLeft / (cards[1].offsetLeft - cards[0].offsetLeft)));
       if (i !== idx) { idx = i; renderDots(); }
     }, 100);
@@ -456,6 +503,64 @@ fbq('track', 'PageView');
       btn.textContent = '견적 문의 보내기';
     }
   });
+
+  // 4. 후기 작성 — 시트 '후기' 탭에 저장, 승인 후 게시
+  const reviewDialog = document.getElementById('reviewDialog');
+  const reviewForm = document.getElementById('reviewForm');
+  document.getElementById('openReview').onclick = () => reviewDialog.showModal();
+  document.getElementById('closeReview').onclick = () => reviewDialog.close();
+  reviewForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = reviewForm.querySelector('[type=submit]');
+    btn.disabled = true;
+    btn.textContent = '등록 중...';
+    try {
+      const data = Object.fromEntries(new FormData(reviewForm));
+      data.type = 'review';
+      const res = await fetch(GOOGLE_SCRIPT_URL, { method: 'POST', body: JSON.stringify(data) });
+      const result = await res.json();
+      if (!result.ok) throw new Error(result.error);
+      alert('후기가 접수되었습니다. 확인 후 게시됩니다. 감사합니다!');
+      reviewForm.reset();
+      reviewDialog.close();
+    } catch (err) {
+      console.error('Error!', err);
+      alert('등록 중 오류가 발생했습니다. 다시 시도해 주세요.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '후기 등록';
+    }
+  });
+
+  // 5. 승인된 후기 불러오기 — 있으면 기본 후기 대신 표시 (textContent로만 넣어 스크립트 삽입 차단)
+  fetch(GOOGLE_SCRIPT_URL)
+    .then(res => res.json())
+    .then(({ reviews }) => {
+      if (!reviews || !reviews.length) return;
+      slider.replaceChildren(...reviews.map(r => {
+        const card = document.createElement('article');
+        card.className = 'review';
+        const stars = document.createElement('div');
+        stars.className = 'stars';
+        const n = Math.min(5, Math.max(1, Math.round(r.rating) || 5));
+        stars.textContent = '★'.repeat(n) + '☆'.repeat(5 - n);
+        const text = document.createElement('p');
+        text.textContent = r.text;
+        const meta = document.createElement('small');
+        meta.textContent = r.name + ' 고객님' + (r.product ? ' · ' + r.product : '');
+        const pc = document.createElement('span');
+        pc.className = 'pc';
+        pc.textContent = ' · ' + r.date;
+        const mo = document.createElement('span');
+        mo.className = 'mo';
+        mo.textContent = r.date;
+        meta.append(pc, mo);
+        card.append(stars, text, meta);
+        return card;
+      }));
+      go(0);
+    })
+    .catch(err => console.error('후기 불러오기 실패', err));
 </script>
 </body>
 </html>
